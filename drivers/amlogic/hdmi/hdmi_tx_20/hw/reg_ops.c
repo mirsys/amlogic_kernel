@@ -33,7 +33,6 @@
 #include "hdmi_tx_reg.h"
 
 static int dbg_en;
-static DEFINE_SPINLOCK(reg_lock2);
 
 /*
  * RePacket HDMI related registers rd/wr
@@ -204,8 +203,13 @@ unsigned int hdmitx_rd_reg(unsigned int addr)
 		raw_local_save_flags(fiq_flag);
 		local_fiq_disable();
 
+/*
+ * If addr is located at 0x5020 ~ 0x667e in DWC,
+ * then should operate twice
+ */
 		hd_write_reg(P_HDMITX_ADDR_PORT + offset, addr);
 		hd_write_reg(P_HDMITX_ADDR_PORT + offset, addr);
+		data = hd_read_reg(P_HDMITX_DATA_PORT + offset);
 		data = hd_read_reg(P_HDMITX_DATA_PORT + offset);
 
 		raw_local_irq_restore(fiq_flag);
@@ -284,49 +288,6 @@ void hdmitx_rd_check_reg(unsigned int addr, unsigned int exp_data,
 			(unsigned int)exp_data, (unsigned int)mask);
 	}
 }
-
-#define waiting_aocec_free() \
-	do {\
-		unsigned long cnt = 0;\
-		while (hd_read_reg(P_AO_CEC_RW_REG) & (1<<23)) {\
-			if (3500 == cnt++) { \
-				pr_info("waiting aocec free time out.\n");\
-				break;\
-			} \
-		} \
-	} while (0)
-
-unsigned long aocec_rd_reg(unsigned long addr)
-{
-	unsigned long data32;
-	unsigned long flags;
-	waiting_aocec_free();
-	spin_lock_irqsave(&reg_lock2, flags);
-	data32 = 0;
-	data32 |= 0 << 16; /* [16]	 cec_reg_wr */
-	data32 |= 0 << 8; /* [15:8]   cec_reg_wrdata */
-	data32 |= addr << 0; /* [7:0]	cec_reg_addr */
-	hd_write_reg(P_AO_CEC_RW_REG, data32);
-
-	waiting_aocec_free();
-	data32 = ((hd_read_reg(P_AO_CEC_RW_REG)) >> 24) & 0xff;
-	spin_unlock_irqrestore(&reg_lock2, flags);
-	return data32;
-} /* aocec_rd_reg */
-
-void aocec_wr_reg(unsigned long addr, unsigned long data)
-{
-	unsigned long data32;
-	unsigned long flags;
-	waiting_aocec_free();
-	spin_lock_irqsave(&reg_lock2, flags);
-	data32 = 0;
-	data32 |= 1 << 16; /* [16]	 cec_reg_wr */
-	data32 |= data << 8; /* [15:8]   cec_reg_wrdata */
-	data32 |= addr << 0; /* [7:0]	cec_reg_addr */
-	hd_write_reg(P_AO_CEC_RW_REG, data32);
-	spin_unlock_irqrestore(&reg_lock2, flags);
-} /* aocec_wr_only_reg */
 
 void hdcp22_wr_reg(uint32_t addr, uint32_t data)
 {

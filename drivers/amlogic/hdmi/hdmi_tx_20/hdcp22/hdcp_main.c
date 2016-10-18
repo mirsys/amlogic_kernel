@@ -36,6 +36,7 @@
 #include <linux/proc_fs.h>
 #include <linux/version.h>
 #include <linux/delay.h>
+#include <linux/amlogic/hdmi_tx/hdmi_tx_module.h>
 
 #include "host_lib_driver_linux_if.h"
 
@@ -159,7 +160,8 @@ static long cmd_load_code(struct esm_device *esm,
 		sizeof(struct esm_hld_ioctl_load_code));
 	if (ret)
 		pr_info("copy left %ld Bytes\n", ret);
-	esm->code_loaded = krequest.returned_status == ESM_HL_DRIVER_SUCCESS;
+	esm->code_loaded =
+		(krequest.returned_status == ESM_HL_DRIVER_SUCCESS);
 
 	return 0;
 }
@@ -231,7 +233,8 @@ static long cmd_load_code32(struct esm_device *esm,
 		sizeof(struct compact_esm_hld_ioctl_load_code));
 	if (ret)
 		pr_info("copy left %ld Bytes\n", ret);
-	esm->code_loaded = krequest.returned_status == ESM_HL_DRIVER_SUCCESS;
+	esm->code_loaded =
+		(krequest.returned_status == ESM_HL_DRIVER_SUCCESS);
 
 	return 0;
 }
@@ -358,7 +361,7 @@ static long cmd_hpi_write(struct esm_device *esm,
 		udelay(10);
 		hdmitx_set_reg_bits(HDMITX_TOP_SW_RESET, 0, 5, 1);
 		udelay(10);
-		hdmitx_set_reg_bits(HDMITX_DWC_MC_CLKDIS, 0, 6, 1);
+		hdmitx_set_reg_bits(HDMITX_DWC_MC_CLKDIS, 1, 6, 1);
 		hdmitx_wr_reg(HDMITX_DWC_HDCP22REG_MASK, 0);
 		hdmitx_wr_reg(HDMITX_DWC_HDCP22REG_MUTE, 0);
 		set_pkf_duk_nonce();
@@ -1181,6 +1184,10 @@ static void hdcp22_hw_init(void)
 	hdmitx_wr_reg(HDMITX_DWC_A_HDCPCFG0, 0x73);
 	hd_set_reg_bits(P_HHI_GCLK_MPEG2, 1, 3, 1);
 	hd_write_reg(P_HHI_HDCP22_CLK_CNTL, 0x01000100);
+	/* Enable skpclk to HDCP2.2 IP */
+	hdmitx_set_reg_bits(HDMITX_TOP_CLK_CNTL, 1, 7, 1);
+	/* Enable esmclk to HDCP2.2 IP */
+	hdmitx_set_reg_bits(HDMITX_TOP_CLK_CNTL, 1, 6, 1);
 	/* Enable tmds_clk to HDCP2.2 IP */
 	hdmitx_set_reg_bits(HDMITX_TOP_CLK_CNTL, 1, 5, 1);
 	/* sw_reset_hdcp22: to reset HDCP2.2 IP */
@@ -1197,7 +1204,13 @@ static void hdcp22_hw_init(void)
 
 static int __init hld_init(void)
 {
+	struct hdmitx_dev *hdmitx_device = get_hdmitx_device();
+
 	pr_info("%sInitializing...\n", MY_TAG);
+	if (hdmitx_device->hdtx_dev == NULL) {
+		pr_info("%sExit for null device of hdmitx!\n", MY_TAG);
+		return -ENODEV;
+	}
 
 	memset(esm_devices, 0, sizeof(esm_devices));
 
@@ -1216,7 +1229,14 @@ static int __init hld_init(void)
 
 static void __exit hld_exit(void)
 {
+	struct hdmitx_dev *hdmitx_device = get_hdmitx_device();
+
 	pr_info("%sExiting...\n", MY_TAG);
+	if (hdmitx_device->hdtx_dev == NULL) {
+		pr_info("%sExit for null device of hdmitx!\n", MY_TAG);
+		return;
+	}
+
 	end_device();
 	end_device_class();
 	unregister_device_range();
